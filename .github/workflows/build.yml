@@ -186,6 +186,12 @@ jobs:
     - name: Integrate NoMount
       uses: ./.github/actions/nomount
 
+    - name: Export Kasumi LKM Symbols
+      uses: ./.github/actions/kasumi-exports
+
+    - name: Integrate NoMount
+      uses: ./.github/actions/nomount
+
     - name: Clean Kernel Flags
       uses: ./.github/actions/clean-kernel-flags
 
