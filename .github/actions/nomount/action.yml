@@ -1,0 +1,33 @@
+name: Integrate NoMount
+description: Integrates NoMount VFS path redirection (no mount table pollution) into the kernel
+
+runs:
+  using: composite
+  steps:
+    - name: Apply NoMount kernel patch
+      working-directory: ${{ github.workspace }}/kernel/common
+      shell: bash
+      run: |
+        set -euo pipefail
+        PATCH_URL="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/patches/nomount_5.10_kernel_integration.patch"
+        echo "[nomount] Downloading 5.10 integration patch..."
+        curl -fsSL "$PATCH_URL" -o /tmp/nomount.patch
+        patch -p1 < /tmp/nomount.patch
+        echo "[nomount] Patch applied"
+
+    - name: Copy NoMount source files
+      working-directory: ${{ github.workspace }}/kernel/common
+      shell: bash
+      run: |
+        set -euo pipefail
+        BASE="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/src"
+        curl -fsSL "$BASE/nomount.c" -o fs/nomount.c
+        curl -fsSL "$BASE/nomount.h" -o fs/nomount.h
+        echo "[nomount] Source files copied to fs/"
+
+    - name: Enable NoMount config
+      working-directory: ${{ github.workspace }}/kernel
+      shell: bash
+      run: |
+        echo "CONFIG_NOMOUNT=y" >> wild_gki.fragment
+        echo "[nomount] CONFIG_NOMOUNT=y added to config fragment"
