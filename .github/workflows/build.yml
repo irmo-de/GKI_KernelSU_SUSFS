@@ -179,6 +179,13 @@ jobs:
     - name: Remove Protected Exports
       uses: ./.github/actions/remove-protected-exports
 
+
+    - name: Export Kasumi LKM Symbols
+      uses: ./.github/actions/kasumi-exports
+
+    - name: Integrate NoMount
+      uses: ./.github/actions/nomount
+
     - name: Clean Kernel Flags
       uses: ./.github/actions/clean-kernel-flags
 
