@@ -1,0 +1,35 @@
+name: Export Kasumi LKM Symbols
+description: Adds EXPORT_SYMBOL for symbols required by Hybrid Mount kasumi_lkm
+
+runs:
+  using: composite
+  steps:
+    - name: Export missing symbols for kasumi LKM
+      working-directory: ${{ github.workspace }}/kernel/common
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        add_sym() {
+          local file=$1 sym=$2 anchor=$3
+          if grep -q "EXPORT_SYMBOL($sym)" "$file" || grep -q "EXPORT_SYMBOL_GPL($sym)" "$file"; then
+            echo "[kasumi] $sym already exported"
+            return
+          fi
+          if [ -n "$anchor" ] && grep -q "$anchor" "$file"; then
+            sed -i "/$anchor/a EXPORT_SYMBOL($sym);" "$file"
+          else
+            echo "EXPORT_SYMBOL($sym);" >> "$file"
+          fi
+          echo "[kasumi] added EXPORT_SYMBOL($sym) in $file"
+        }
+
+        add_sym kernel/kprobes.c     register_kprobe   "^EXPORT_SYMBOL(register_kprobes);"
+        add_sym kernel/kprobes.c     unregister_kprobe "^EXPORT_SYMBOL(unregister_kprobes);"
+        add_sym kernel/rcu/srcutree.c __srcu_read_lock  "^EXPORT_SYMBOL(srcu_read_lock);"
+        add_sym lib/lockref.c        lockref_get       ""
+        add_sym fs/readdir.c         iterate_dir       ""
+        add_sym kernel/cred.c        prepare_kernel_cred ""
+        add_sym fs/stat.c            generic_fillattr  ""
+
+        echo "[kasumi] Symbol export patch complete"
