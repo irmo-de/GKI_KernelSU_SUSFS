@@ -99,6 +99,9 @@ jobs:
       if: contains(inputs.feature_set, 'KSUN') || inputs.feature_set == 'FULL'
       uses: ./.github/actions/kernelsu
 
+    - name: Integrate NoMount
+      uses: ./.github/actions/nomount
+
     - name: SUSFS
       if: contains(inputs.feature_set, 'SUSFS') || inputs.feature_set == 'FULL'
       uses: ./.github/actions/susfs
@@ -183,14 +186,10 @@ jobs:
     - name: Export Kasumi LKM Symbols
       uses: ./.github/actions/kasumi-exports
 
-    - name: Integrate NoMount
-      uses: ./.github/actions/nomount
 
     - name: Export Kasumi LKM Symbols
       uses: ./.github/actions/kasumi-exports
 
-    - name: Integrate NoMount
-      uses: ./.github/actions/nomount
 
     - name: Clean Kernel Flags
       uses: ./.github/actions/clean-kernel-flags
