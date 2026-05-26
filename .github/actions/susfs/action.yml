@@ -59,8 +59,8 @@ runs:
       shell: bash
       working-directory: ${{ github.workspace }}/kernel/KernelSU-Next
       run: |
-        cp ${{ github.workspace }}/kernel_patches/wild/ksun-4c9737a-susfs-v2.1.0-a14-6.1-ef16cbce.patch ./
-        patch -p1 < ksun-4c9737a-susfs-v2.1.0-a14-6.1-ef16cbce.patch
+        cp ${{ github.workspace }}/kernel_patches/wild/ksun-5a4a718-susfs-f7ae19ef-gki-android14-6.1.patch ./
+        patch -p1 < ksun-5a4a718-susfs-f7ae19ef-gki-android14-6.1.patch
 
     - name: Apply Kernel SUSFS Patches
       shell: bash
