@@ -4,16 +4,36 @@ description: Integrates NoMount VFS path redirection (no mount table pollution) 
 runs:
   using: composite
   steps:
-    - name: Apply NoMount kernel patch
+    - name: Apply NoMount kernel patch (excluding task_mmu.c)
       working-directory: ${{ github.workspace }}/kernel/common
       shell: bash
       run: |
         set -euo pipefail
         PATCH_URL="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/patches/nomount_5.10_kernel_integration.patch"
         echo "[nomount] Downloading 5.10 integration patch..."
-        curl -fsSL "$PATCH_URL" -o /tmp/nomount.patch
-        patch -p1 --forward --reject-file=/dev/null < /tmp/nomount.patch || echo "[nomount] Some hunks skipped (already applied or conflict)"
-        echo "[nomount] Patch applied"
+        curl -fsSL "$PATCH_URL" -o /tmp/nomount_full.patch
+        # Strip out task_mmu.c hunk to avoid SUSFS conflict (handled by combined patch below)
+        python3 - << 'PYEOF'
+import re
+with open("/tmp/nomount_full.patch") as f:
+    content = f.read()
+parts = re.split(r'(?=^diff --git )', content, flags=re.MULTILINE)
+filtered = [p for p in parts if p.strip() and 'task_mmu.c' not in p]
+with open("/tmp/nomount_notaskmmu.patch", "w") as f:
+    f.write("".join(filtered))
+PYEOF
+        patch -p1 --forward < /tmp/nomount_notaskmmu.patch
+        echo "[nomount] Main patch applied"
+
+    - name: Apply combined task_mmu.c patch (nomount + SUSFS merged)
+      working-directory: ${{ github.workspace }}/kernel/common
+      shell: bash
+      run: |
+        set -euo pipefail
+        PATCH="${{ github.workspace }}/.github/patches/task_mmu_nomount_susfs.patch"
+        echo "[nomount] Applying combined task_mmu.c patch..."
+        patch -p0 --forward < "$PATCH" || true
+        echo "[nomount] task_mmu.c patch done"
 
     - name: Copy NoMount source files
       working-directory: ${{ github.workspace }}/kernel/common
