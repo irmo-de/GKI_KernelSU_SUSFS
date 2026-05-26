@@ -23,7 +23,7 @@ runs:
         set -euo pipefail
         PATCH="${{ github.workspace }}/.github/patches/task_mmu_nomount_susfs.patch"
         echo "[nomount] Applying combined task_mmu.c patch..."
-        patch -p0 --forward < "$PATCH" || true
+        patch -p1 --forward < "$PATCH"
         echo "[nomount] task_mmu.c patch done"
 
     - name: Copy NoMount source files
