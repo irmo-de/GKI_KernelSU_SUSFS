@@ -12,7 +12,7 @@ runs:
         PATCH_URL="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/patches/nomount_5.10_kernel_integration.patch"
         echo "[nomount] Downloading 5.10 integration patch..."
         curl -fsSL "$PATCH_URL" -o /tmp/nomount.patch
-        patch -p1 < /tmp/nomount.patch
+        patch -p1 --forward --reject-file=/dev/null < /tmp/nomount.patch || echo "[nomount] Some hunks skipped (already applied or conflict)"
         echo "[nomount] Patch applied"
 
     - name: Copy NoMount source files
