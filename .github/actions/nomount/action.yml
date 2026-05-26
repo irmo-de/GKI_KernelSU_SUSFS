@@ -12,16 +12,7 @@ runs:
         PATCH_URL="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/patches/nomount_5.10_kernel_integration.patch"
         echo "[nomount] Downloading 5.10 integration patch..."
         curl -fsSL "$PATCH_URL" -o /tmp/nomount_full.patch
-        python3 -c "
-import re
-with open('/tmp/nomount_full.patch') as f:
-    content = f.read()
-parts = re.split(r'(?=^diff --git )', content, flags=re.MULTILINE)
-filtered = [p for p in parts if p.strip() and 'task_mmu.c' not in p]
-with open('/tmp/nomount_notaskmmu.patch', 'w') as f:
-    f.write(''.join(filtered))
-print('[nomount] Stripped task_mmu.c hunk, kept', len(filtered), 'sections')
-"
+        python3 -c "import re; content=open('/tmp/nomount_full.patch').read(); parts=re.split(r'(?=^diff --git )',content,flags=re.MULTILINE); filtered=[p for p in parts if p.strip() and 'task_mmu.c' not in p]; open('/tmp/nomount_notaskmmu.patch','w').write(''.join(filtered)); print('[nomount] Stripped task_mmu.c hunk, kept',len(filtered),'sections')"
         patch -p1 --forward < /tmp/nomount_notaskmmu.patch
         echo "[nomount] Main patch applied"
 
