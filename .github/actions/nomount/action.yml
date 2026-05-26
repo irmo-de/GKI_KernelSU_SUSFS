@@ -1,5 +1,5 @@
 name: Integrate NoMount
-description: Integrates NoMount VFS path redirection (no mount table pollution) into the kernel
+description: Integrates NoMount VFS path redirection into the kernel
 
 runs:
   using: composite
@@ -12,16 +12,16 @@ runs:
         PATCH_URL="https://raw.githubusercontent.com/maxsteeel/nomount/main/kernel/patches/nomount_5.10_kernel_integration.patch"
         echo "[nomount] Downloading 5.10 integration patch..."
         curl -fsSL "$PATCH_URL" -o /tmp/nomount_full.patch
-        # Strip out task_mmu.c hunk to avoid SUSFS conflict (handled by combined patch below)
-        python3 - << 'PYEOF'
+        python3 -c "
 import re
-with open("/tmp/nomount_full.patch") as f:
+with open('/tmp/nomount_full.patch') as f:
     content = f.read()
 parts = re.split(r'(?=^diff --git )', content, flags=re.MULTILINE)
 filtered = [p for p in parts if p.strip() and 'task_mmu.c' not in p]
-with open("/tmp/nomount_notaskmmu.patch", "w") as f:
-    f.write("".join(filtered))
-PYEOF
+with open('/tmp/nomount_notaskmmu.patch', 'w') as f:
+    f.write(''.join(filtered))
+print('[nomount] Stripped task_mmu.c hunk, kept', len(filtered), 'sections')
+"
         patch -p1 --forward < /tmp/nomount_notaskmmu.patch
         echo "[nomount] Main patch applied"
 
