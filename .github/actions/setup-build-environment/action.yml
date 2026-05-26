@@ -33,8 +33,10 @@ runs:
         # BOOT_SIGN_KEY is optional; falls back to pre-downloaded testkey_rsa2048.pem
 
         KEY_PATH="${{ github.workspace }}/kernel-build-tools/linux-x86/share/avb/testkey_rsa2048.pem"
-        printf '%s' "$BOOT_SIGN_KEY" > "$KEY_PATH"
-        if ! head -n 1 "$KEY_PATH" | grep -q 'BEGIN'; then
-          printf '%s' "$BOOT_SIGN_KEY" | base64 -d > "$KEY_PATH"
+        if [ -n "${BOOT_SIGN_KEY:-}" ]; then
+          printf '%s' "$BOOT_SIGN_KEY" > "$KEY_PATH"
+          if ! head -n 1 "$KEY_PATH" | grep -q 'BEGIN'; then
+            printf '%s' "$BOOT_SIGN_KEY" | base64 -d > "$KEY_PATH"
+          fi
+          chmod 600 "$KEY_PATH"
         fi
-        chmod 600 "$KEY_PATH"
