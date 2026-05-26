@@ -100,6 +100,7 @@ jobs:
       uses: ./.github/actions/kernelsu
 
     - name: Integrate NoMount
+      if: false
       uses: ./.github/actions/nomount
 
     - name: SUSFS
