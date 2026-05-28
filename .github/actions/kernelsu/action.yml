@@ -15,7 +15,11 @@ runs:
 
         curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/dev/kernel/setup.sh" | bash -s "$KSU_SETUP_COMMIT"
         
-        cd KernelSU-Next/kernel
+        cd KernelSU-Next
+        echo "[+] Applying SELinux Hide patch..."
+        patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"
+        
+        cd kernel
         
         COMMITS_COUNT=$(/usr/bin/git rev-list --count HEAD)
         BASE_VERSION=30000
