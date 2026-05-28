@@ -1,0 +1,29 @@
+diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
+index fa78d97d..d9546b59 100644
+--- a/kernel/feature/selinux_hide.c
++++ b/kernel/feature/selinux_hide.c
+@@ -397,6 +397,24 @@ void ksu_selinux_hide_drop_backup_if_unused()
+     mutex_unlock(&selinux_hide_mutex);
+ }
+ 
++void ksu_selinux_hide_auto_enable(void)
++{
++    int ret;
++    pr_info("selinux_hide: auto-enabling selinux hide\n");
++    mutex_lock(&selinux_hide_mutex);
++    ksu_selinux_hide_enabled = true;
++    if (!ksu_selinux_hide_running) {
++        ret = ksu_selinux_hide_enable();
++        if (!ret) {
++            ksu_selinux_hide_running = true;
++            pr_info("selinux_hide: auto-enabled successfully\n");
++        } else {
++            pr_err("selinux_hide: auto-enable failed: %d\n", ret);
++        }
++    }
++    mutex_unlock(&selinux_hide_mutex);
++}
++
+ #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
+ /*
+  * Caveat:  Mutates scontext.
