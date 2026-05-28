@@ -128,21 +128,25 @@ jobs:
           # (lsm_hook.o, arm64/patch_memory.o, ...) from Kbuild. We therefore:
           #   1) apply the SUSFS auto-enable patch (adds the call site in rules.c
           #      and the prototype in selinux_hide.h),
-          #   2) restore the full upstream selinux_hide.c and re-add it via a patch
-          #      that also drops the setprocattr LSM hook (so we only need
-          #      ksu_patch_text, not the whole lsm_hook framework), and
-          #   3) re-add hook/arm64|x86_64/patch_memory.o to Kbuild so ksu_patch_text
-          #      (a self-contained text-patcher) is linked in.
+          #   2) restore the full upstream selinux_hide.c and re-add only the
+          #      ksu_selinux_hide_auto_enable() function to it, and
+          #   3) re-add hook/lsm_hook.o + hook/arm64|x86_64/patch_memory.o to Kbuild
+          #      so ksu_lsm_hook (setprocattr hook) and ksu_patch_text (write_op
+          #      hooks) are linked. Both the access/context write_op hooks AND the
+          #      setprocattr hook are needed: DirtySepolicy's contextExists() falls
+          #      back to writing /proc/self/attr/current, which only the setprocattr
+          #      hook intercepts. lsm_hook.o only needs symbol_resolver.o (already
+          #      compiled in SUSFS builds) and patch_memory.o.
           echo "[+] Applying SUSFS-compatible SELinux Hide patch (rules.c call + header)..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs.patch"
           echo "[+] Restoring full upstream selinux_hide.c with working selinuxfs hooks..."
           git checkout HEAD -- kernel/feature/selinux_hide.c
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs_hooks.patch"
-          echo "[+] Re-adding patch_memory.o to Kbuild (ksu_patch_text) for the SUSFS build..."
+          echo "[+] Re-adding lsm_hook.o + patch_memory.o to Kbuild for the SUSFS build..."
           if ! grep -q "hook/arm64/patch_memory.o" kernel/Kbuild; then
-            perl -0pi -e 's{(kernelsu-objs \+= feature/selinux_hide\.o\n)}{$1ifeq (\$(CONFIG_ARM64),y)\nkernelsu-objs += hook/arm64/patch_memory.o\nelse ifeq (\$(CONFIG_X86_64),y)\nkernelsu-objs += hook/x86_64/patch_memory.o\nendif\n}' kernel/Kbuild
+            perl -0pi -e 's{(kernelsu-objs \+= feature/selinux_hide\.o\n)}{$1kernelsu-objs += hook/lsm_hook.o\nifeq (\$(CONFIG_ARM64),y)\nkernelsu-objs += hook/arm64/patch_memory.o\nelse ifeq (\$(CONFIG_X86_64),y)\nkernelsu-objs += hook/x86_64/patch_memory.o\nendif\n}' kernel/Kbuild
           fi
-          grep -n "patch_memory.o" kernel/Kbuild || { echo "ERROR: failed to add patch_memory.o to Kbuild"; exit 1; }
+          grep -nE "lsm_hook.o|patch_memory.o" kernel/Kbuild || { echo "ERROR: failed to add hook objects to Kbuild"; exit 1; }
         else
           echo "[+] Applying standard SELinux Hide patch..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"
