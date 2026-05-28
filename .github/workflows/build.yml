@@ -112,6 +112,20 @@ jobs:
         os_patch_level: ${{ inputs.os_patch_level }}
         sublevel: ${{ steps.extract.outputs.sublevel }}
 
+    - name: Apply SELinux Hide Auto-Enable Patch
+      if: contains(inputs.feature_set, 'KSUN') || inputs.feature_set == 'FULL'
+      shell: bash
+      working-directory: ${{ github.workspace }}/kernel
+      run: |
+        cd KernelSU-Next
+        if grep -q "susfs" kernel/selinux/rules.c 2>/dev/null; then
+          echo "[+] Applying SUSFS-compatible SELinux Hide patch..."
+          patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs.patch"
+        else
+          echo "[+] Applying standard SELinux Hide patch..."
+          patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"
+        fi
+
     - name: Baseband Guard
       if: (contains(inputs.feature_set, 'BBG') || inputs.feature_set == 'FULL')
       uses: ./.github/actions/bbg
