@@ -125,6 +125,12 @@ jobs:
           echo "[+] Applying standard SELinux Hide patch..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"
         fi
+        echo "[+] Modifying selinuxfs.c to make write_op non-const and non-static to bypass ThinLTO optimizations..."
+        perl -pi -e 's/static ssize_t \(\*const write_op\[\]\)/ssize_t (*write_op[])/g' "${{ github.workspace }}/kernel/common/security/selinux/selinuxfs.c"
+        echo "[+] Fixing %pSb format specifier in selinux_hide.c..."
+        perl -pi -e 's/%pSb/%pS/g' kernel/feature/selinux_hide.c
+
+
 
     - name: Baseband Guard
       if: (contains(inputs.feature_set, 'BBG') || inputs.feature_set == 'FULL')
