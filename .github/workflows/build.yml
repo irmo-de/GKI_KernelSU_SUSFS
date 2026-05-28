@@ -151,6 +151,8 @@ jobs:
           echo "[+] Applying standard SELinux Hide patch..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"
         fi
+        echo "[+] Installing CFI-aware symbol resolver (so LSM functable hooks find hashed .cfi_jt variants)..."
+        cp "${{ github.workspace }}/.github/patches/files/symbol_resolver.c" kernel/infra/symbol_resolver.c
         echo "[+] Modifying selinuxfs.c to make write_op non-const, non-static, and volatile to bypass ThinLTO optimizations..."
         perl -pi -e 's/static ssize_t \(\*const write_op\[\]\)/ssize_t (* volatile write_op[])/g' "${{ github.workspace }}/kernel/common/security/selinux/selinuxfs.c"
         echo "[+] Fixing %pSb format specifier in selinux_hide.c..."

@@ -1,8 +1,18 @@
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
-index fa78d97d..d9546b59 100644
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
-@@ -397,6 +397,24 @@ void ksu_selinux_hide_drop_backup_if_unused()
+@@ -287,8 +287,8 @@
+ 
+     ret = ksu_lsm_hook(&selinux_setprocattr_hook);
+     if (ret) {
+-        pr_err("selinux_hide: init: selinux_setprocattr_hook err: %d\n", ret);
+-        goto unhook;
++        pr_warn("selinux_hide: setprocattr hook failed (%d); access/context hooks remain active\n", ret);
++        ret = 0;
+     }
+ 
+     return 0;
+@@ -397,6 +397,24 @@
      mutex_unlock(&selinux_hide_mutex);
  }
  
