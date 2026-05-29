@@ -143,6 +143,12 @@ jobs:
             perl -0pi -e 's{(kernelsu-objs \+= feature/selinux_hide\.o\n)}{$1ifeq (\$(CONFIG_ARM64),y)\nkernelsu-objs += hook/arm64/patch_memory.o\nelse ifeq (\$(CONFIG_X86_64),y)\nkernelsu-objs += hook/x86_64/patch_memory.o\nendif\n}' kernel/Kbuild
           fi
           grep -n "patch_memory.o" kernel/Kbuild || { echo "ERROR: failed to add patch_memory.o to Kbuild"; exit 1; }
+          echo "[+] Adding compiled-in setprocattr interceptor call to common selinux_setprocattr (closes contextExists /proc/self/attr/current leak; manual hook, not lsm_hook)..."
+          SEL_HOOKS="${{ github.workspace }}/kernel/common/security/selinux/hooks.c"
+          if ! grep -q "ksu_selinux_hide_intercept_setprocattr" "$SEL_HOOKS"; then
+            perl -0pi -e 's/(static int selinux_setprocattr\(const char \*name, void \*value, size_t size\)\n\{\n(?:[^\n]*\n)*?\tchar \*str = value;\n)/${1}\t{ extern int ksu_selinux_hide_intercept_setprocattr(const char *name, void *value, size_t size); int ksu_r = ksu_selinux_hide_intercept_setprocattr(name, value, size); if (ksu_r) return ksu_r; }\n/' "$SEL_HOOKS"
+          fi
+          grep -q "ksu_selinux_hide_intercept_setprocattr" "$SEL_HOOKS" || { echo "ERROR: failed to insert setprocattr interceptor into selinux/hooks.c"; exit 1; }
         else
           echo "[+] Applying standard SELinux Hide patch..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide.patch"

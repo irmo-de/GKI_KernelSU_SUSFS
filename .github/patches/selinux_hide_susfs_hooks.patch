@@ -83,7 +83,7 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  }
  
  static void ksu_selinux_hide_disable()
-@@ -397,6 +343,24 @@
+@@ -397,6 +343,62 @@
      mutex_unlock(&selinux_hide_mutex);
  }
  
@@ -103,6 +103,44 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +        }
 +    }
 +    mutex_unlock(&selinux_hide_mutex);
++}
++
++/*
++ * Compiled-in hook (called directly from the patched common selinux_setprocattr),
++ * NOT via the lsm_hook framework (which bootloops this SUSFS kernel). Closes the
++ * DirtySepolicy contextExists() fallback that writes /proc/self/attr/current:
++ * for an app setting "current" to a context that does NOT exist in the clean
++ * backup policy, report -EINVAL so the context appears not to exist.
++ * Returns 0 to let the original selinux_setprocattr proceed.
++ */
++int ksu_selinux_hide_intercept_setprocattr(const char *name, void *value, size_t size)
++{
++    u32 sid;
++    int rc;
++    size_t len;
++    char *str = value;
++
++    if (!ksu_selinux_hide_running || !backup_sepolicy)
++        return 0;
++    if (current_uid().val < 10000)
++        return 0;
++    if (!name || strcmp(name, "current") != 0)
++        return 0;
++    if (!size || !str || !str[0] || str[0] == '\n')
++        return 0;
++    len = size;
++    if (str[len - 1] == '\n')
++        len--;
++    if (!len)
++        return 0;
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
++    rc = security_context_to_sid_with_policy(backup_sepolicy, str, len, &sid, SECSID_NULL, GFP_KERNEL);
++#else
++    rc = security_context_to_sid(&fake_state, str, len, &sid, GFP_KERNEL);
++#endif
++    if (rc == -EINVAL)
++        return -EINVAL;
++    return 0;
 +}
 +
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
