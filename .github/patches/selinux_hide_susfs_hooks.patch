@@ -1,7 +1,15 @@
 diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 --- a/kernel/feature/selinux_hide.c
 +++ b/kernel/feature/selinux_hide.c
-@@ -25,7 +25,6 @@
+@@ -8,6 +8,7 @@
+ #include <linux/printk.h>
+ #include <linux/string.h>
+ #include <linux/fs.h>
++#include <linux/mm.h>
+ #include <asm-generic/errno-base.h>
+ #include <net/genetlink.h>
+ #include <linux/moduleparam.h>
+@@ -25,7 +26,6 @@
  #include "hook/patch_memory.h"
  #include "ksu.h"
  #include "policy/feature.h"
@@ -9,7 +17,7 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  
  enum sel_inos {
      SEL_ROOT_INO = 2,
-@@ -190,52 +189,6 @@
+@@ -190,53 +190,8 @@
      return length;
  }
  
@@ -60,9 +68,11 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 -}
 -
  static void ksu_selinux_hide_unhook();
++static void ksu_hook_status_open(void);
  static int ksu_selinux_hide_enable()
  {
-@@ -285,12 +238,6 @@
+     int ret;
+@@ -285,11 +240,7 @@
          goto unhook;
      }
  
@@ -71,11 +81,11 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 -        pr_err("selinux_hide: init: selinux_setprocattr_hook err: %d\n", ret);
 -        goto unhook;
 -    }
--
++    ksu_hook_status_open();
+ 
      return 0;
  
- unhook:
-@@ -316,7 +263,6 @@
+@@ -316,7 +267,6 @@
              pr_err("selinux_hide: exit: patch_text access_write err: %d\n", ret);
          }
      }
@@ -83,7 +93,7 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  }
  
  static void ksu_selinux_hide_disable()
-@@ -397,6 +343,62 @@
+@@ -397,6 +347,144 @@
      mutex_unlock(&selinux_hide_mutex);
  }
  
@@ -107,11 +117,10 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +
 +/*
 + * Compiled-in hook (called directly from the patched common selinux_setprocattr),
-+ * NOT via the lsm_hook framework (which bootloops this SUSFS kernel). Closes the
-+ * DirtySepolicy contextExists() fallback that writes /proc/self/attr/current:
-+ * for an app setting "current" to a context that does NOT exist in the clean
-+ * backup policy, report -EINVAL so the context appears not to exist.
-+ * Returns 0 to let the original selinux_setprocattr proceed.
++ * NOT via lsm_hook (which bootloops this SUSFS kernel). Closes DirtySepolicy's
++ * contextExists() fallback that writes /proc/self/attr/current: for an app
++ * setting "current" to a context absent from the clean backup policy, report
++ * -EINVAL so the context appears not to exist. Returns 0 to proceed normally.
 + */
 +int ksu_selinux_hide_intercept_setprocattr(const char *name, void *value, size_t size)
 +{
@@ -141,6 +150,89 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +    if (rc == -EINVAL)
 +        return -EINVAL;
 +    return 0;
++}
++
++/*
++ * Status-page hiding (sequence/policyload). DirtySepolicy reads
++ * /sys/fs/selinux/status; KSU's avc resets bump 'sequence' without bumping
++ * 'policyload', and that mismatch is the tell. We hook sel_handle_status_ops.open
++ * (function-pointer slot patched via ksu_patch_text - same safe primitive as the
++ * write_op hooks, NOT lsm_hook) and hand apps a frozen page with a consistent
++ * (policyload=1, sequence=4) pair. .read and .mmap both use filp->private_data,
++ * which .open sets, so hooking .open alone covers both.
++ */
++static struct page *ksu_fake_status = NULL;
++typedef int (*ksu_status_open_fn)(struct inode *, struct file *);
++static ksu_status_open_fn ksu_orig_status_open, *ksu_status_open_slot;
++
++static void ksu_init_fake_status(void)
++{
++    struct page *page;
++    struct selinux_kernel_status *real, *fake;
++
++    mutex_lock(&selinux_state.status_lock);
++    if (ksu_fake_status)
++        goto out;
++    if (!selinux_state.status_page)
++        goto out;
++    page = alloc_page(GFP_KERNEL | __GFP_ZERO);
++    if (!page)
++        goto out;
++    real = page_address(selinux_state.status_page);
++    fake = page_address(page);
++    memcpy(fake, real, sizeof(*fake));
++    fake->version = SELINUX_KERNEL_STATUS_VERSION;
++    fake->enforcing = 1;
++    fake->deny_unknown = 1;
++    fake->policyload = 1;
++    fake->sequence = 4;
++    ksu_fake_status = page;
++    pr_info("selinux_hide: fake status seq=%u policyload=%u enforcing=%u\n", fake->sequence, fake->policyload,
++            fake->enforcing);
++out:
++    mutex_unlock(&selinux_state.status_lock);
++}
++
++static int ksu_my_status_open(struct inode *inode, struct file *filp)
++{
++    if (current_uid().val >= 10000 && ksu_selinux_hide_running) {
++        void *data;
++        if (!ksu_fake_status)
++            ksu_init_fake_status();
++        mutex_lock(&selinux_state.status_lock);
++        data = ksu_fake_status;
++        mutex_unlock(&selinux_state.status_lock);
++        if (data) {
++            filp->private_data = data;
++            return 0;
++        }
++    }
++    return ksu_orig_status_open(inode, filp);
++}
++
++static void ksu_hook_status_open(void)
++{
++    struct file_operations *ops;
++    ksu_status_open_fn my = ksu_my_status_open;
++    int ret;
++
++    if (ksu_orig_status_open)
++        return;
++    ops = (struct file_operations *)kallsyms_lookup_name("sel_handle_status_ops");
++    if (!ops) {
++        pr_warn("selinux_hide: sel_handle_status_ops not found; status not hidden\n");
++        return;
++    }
++    ksu_status_open_slot = &ops->open;
++    ksu_orig_status_open = *ksu_status_open_slot;
++    ret = ksu_patch_text(ksu_status_open_slot, &my, sizeof(my), KSU_PATCH_TEXT_FLUSH_DCACHE);
++    if (ret) {
++        pr_err("selinux_hide: patch sel_handle_status_ops.open err %d\n", ret);
++        ksu_status_open_slot = NULL;
++        ksu_orig_status_open = NULL;
++    } else {
++        pr_info("selinux_hide: hooked sel_handle_status_ops.open\n");
++    }
 +}
 +
  #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
