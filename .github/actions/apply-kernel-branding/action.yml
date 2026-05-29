@@ -33,22 +33,28 @@ runs:
         ANDROID_PART=$(echo "$VERSION" | cut -d- -f1)
         KERNEL_PART=$(echo "$VERSION" | cut -d- -f2)
 
+        # Tag the kernel name with this repo's short commit hash so the installed
+        # variant is identifiable from `uname -r` (e.g. 5.10.198-5008d59).
+        SHORT_SHA="$(printf '%s' "${{ github.sha }}" | cut -c1-8)"
+        [ -n "$SHORT_SHA" ] || SHORT_SHA="dev"
+        echo "[branding] kernel name suffix: -$SHORT_SHA"
+
         if [ "${{ inputs.variant }}" == "Wild" ]; then
           tac scripts/setlocalversion | awk '!seen && /^echo / {seen=1; next} 1' | tac > scripts/setlocalversion.tmp
           mv scripts/setlocalversion.tmp scripts/setlocalversion
           if [[ "$KERNEL_PART" == "6.6" || "$KERNEL_PART" == "6.12" ]]; then
             KERNEL_STRING="$KERNEL_PART.${{ inputs.sublevel }}-$ANDROID_PART"
-            echo "echo \"$KERNEL_STRING-Wild\"" >> scripts/setlocalversion
+            echo "echo \"$KERNEL_STRING-$SHORT_SHA\"" >> scripts/setlocalversion
           else
-            echo 'echo "-Wild"' >> scripts/setlocalversion
+            echo "echo \"-$SHORT_SHA\"" >> scripts/setlocalversion
           fi
           chmod +x scripts/setlocalversion
         else
           if grep -q '^CONFIG_LOCALVERSION=' "$DEFCONFIG"; then
             LOCALVERSION_VALUE="$(grep -m1 '^CONFIG_LOCALVERSION=' "$DEFCONFIG" | sed -E 's/^CONFIG_LOCALVERSION="?([^"]*)"?$/\1/')"
-           echo "CONFIG_LOCALVERSION=\"${LOCALVERSION_VALUE}-Wild\"" >> "$CONFIG_FRAGMENT"
+           echo "CONFIG_LOCALVERSION=\"${LOCALVERSION_VALUE}-$SHORT_SHA\"" >> "$CONFIG_FRAGMENT"
           else
-            echo 'CONFIG_LOCALVERSION="-Wild"' >> "$CONFIG_FRAGMENT"
+            echo "CONFIG_LOCALVERSION=\"-$SHORT_SHA\"" >> "$CONFIG_FRAGMENT"
           fi
         fi
 
