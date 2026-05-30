@@ -135,6 +135,12 @@ jobs:
           #      (a self-contained text-patcher) is linked in.
           echo "[+] Applying SUSFS-compatible SELinux Hide patch (rules.c call + header)..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs.patch"
+          echo "[+] Capturing selinux_hide backup_sepolicy ONLY ONCE (apply_kernelsu_rules re-captures on every policy load; on devices that load policy twice - e.g. Pixel 7 / cheetah - the 2nd capture grabs the already-KSU-modified policy and defeats selinux_hide)..."
+          if ! grep -q "ksu_backup_done" kernel/selinux/rules.c; then
+            perl -0pi -e 's/(\tbackup_sepolicy =\n\t\tksu_dup_sepolicy\(rcu_dereference_protected\(old_pol)/\tif (backup_sepolicy)\n\t\tgoto ksu_backup_done;\n$1/' kernel/selinux/rules.c
+            perl -0pi -e 's/(pr_info\("backup sepolicy success!\\n"\);\n\t\t\t\}\n\t\t\}\n\t\}\n)(\tpol = ksu_dup_sepolicy)/$1ksu_backup_done:\n$2/' kernel/selinux/rules.c
+          fi
+          grep -q "ksu_backup_done" kernel/selinux/rules.c || { echo "ERROR: failed to add backup-once guard to rules.c"; exit 1; }
           echo "[+] Restoring full upstream selinux_hide.c with working selinuxfs hooks..."
           git checkout HEAD -- kernel/feature/selinux_hide.c
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs_hooks.patch"
