@@ -17,7 +17,7 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  
  enum sel_inos {
      SEL_ROOT_INO = 2,
-@@ -74,2 +74,18 @@
+@@ -74,2 +74,19 @@
  static write_op_fn *context_write, *access_write;
  static write_op_fn orig_context_write, orig_access_write;
 +static bool ksu_selinux_hide_private_context(const char *context, size_t len)
@@ -31,8 +31,9 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +
 +static void ksu_selinux_hide_filter_av(const char *scon, const char *tcon, u16 tclass, struct av_decision *avd)
 +{
-+    if ((!strcmp(scon, "u:r:kernel:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == SECCLASS_FILE) ||
-+        (!strcmp(scon, "u:r:zygote:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == SECCLASS_DIR))
++    /* SELinuxFS access queries use policy class IDs, not the kernel's generated SECCLASS_* constants. */
++    if ((!strcmp(scon, "u:r:kernel:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == 6) ||
++        (!strcmp(scon, "u:r:zygote:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == 8))
 +        avd->allowed = 0;
 +}
 +
