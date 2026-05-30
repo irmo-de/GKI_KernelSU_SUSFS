@@ -136,11 +136,15 @@ jobs:
           echo "[+] Applying SUSFS-compatible SELinux Hide patch (rules.c call + header)..."
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs.patch"
           echo "[+] Capturing selinux_hide backup_sepolicy ONLY ONCE (apply_kernelsu_rules re-captures on every policy load; on devices that load policy twice - e.g. Pixel 7 / cheetah - the 2nd capture grabs the already-KSU-modified policy and defeats selinux_hide)..."
-          if ! grep -q "ksu_backup_done" kernel/selinux/rules.c; then
-            perl -0pi -e 's/(\tbackup_sepolicy =\n\t\tksu_dup_sepolicy\(rcu_dereference_protected\(old_pol)/\tif (backup_sepolicy)\n\t\tgoto ksu_backup_done;\n$1/' kernel/selinux/rules.c
-            perl -0pi -e 's/(pr_info\("backup sepolicy success!\\n"\);\n\t\t\t\}\n\t\t\}\n\t\}\n)(\tpol = ksu_dup_sepolicy)/$1ksu_backup_done:\n$2/' kernel/selinux/rules.c
+          if ! grep -q "goto ksu_backup_done" kernel/selinux/rules.c; then
+            perl -0pi -e 's/^([ \t]*)backup_sepolicy\s*=\s*\n([ \t]*)ksu_dup_sepolicy\(/$1if (backup_sepolicy)\n$1    goto ksu_backup_done;\n$1backup_sepolicy =\n$2ksu_dup_sepolicy(/m or die "ERROR: failed to insert backup-once guard\\n"' kernel/selinux/rules.c
           fi
-          grep -q "ksu_backup_done" kernel/selinux/rules.c || { echo "ERROR: failed to add backup-once guard to rules.c"; exit 1; }
+          if ! grep -q "^ksu_backup_done:" kernel/selinux/rules.c; then
+            perl -0pi -e 's/^([ \t]*)pol\s*=\s*ksu_dup_sepolicy\(/ksu_backup_done:\n$1pol = ksu_dup_sepolicy(/m or die "ERROR: failed to insert backup-once label\\n"' kernel/selinux/rules.c
+          fi
+          test "$(grep -c "goto ksu_backup_done" kernel/selinux/rules.c)" -eq 1 || { echo "ERROR: expected exactly one backup-once guard in rules.c"; exit 1; }
+          test "$(grep -c "^ksu_backup_done:" kernel/selinux/rules.c)" -eq 1 || { echo "ERROR: expected exactly one backup-once label in rules.c"; exit 1; }
+          sed -n '/if (backup_sepolicy)/,/pol = ksu_dup_sepolicy/p' kernel/selinux/rules.c
           echo "[+] Restoring full upstream selinux_hide.c with working selinuxfs hooks..."
           git checkout HEAD -- kernel/feature/selinux_hide.c
           patch -p1 < "${{ github.workspace }}/.github/patches/selinux_hide_susfs_hooks.patch"

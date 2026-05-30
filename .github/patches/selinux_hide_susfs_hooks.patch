@@ -17,6 +17,42 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  
  enum sel_inos {
      SEL_ROOT_INO = 2,
+@@ -74,2 +74,18 @@
+ static write_op_fn *context_write, *access_write;
+ static write_op_fn orig_context_write, orig_access_write;
++static bool ksu_selinux_hide_private_context(const char *context, size_t len)
++{
++    static const char ksu_domain[] = "u:r:ksu:s0";
++    static const char ksu_file[] = "u:object_r:ksu_file:s0";
++
++    return (len == sizeof(ksu_domain) - 1 && !memcmp(context, ksu_domain, len)) ||
++           (len == sizeof(ksu_file) - 1 && !memcmp(context, ksu_file, len));
++}
++
++static void ksu_selinux_hide_filter_av(const char *scon, const char *tcon, u16 tclass, struct av_decision *avd)
++{
++    if ((!strcmp(scon, "u:r:kernel:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == SECCLASS_FILE) ||
++        (!strcmp(scon, "u:r:zygote:s0") && !strcmp(tcon, "u:object_r:adb_data_file:s0") && tclass == SECCLASS_DIR))
++        avd->allowed = 0;
++}
++
+@@ -80,6 +96,8 @@
+     if (likely(current_uid().val < 10000)) {
+         return orig_context_write(file, buf, size);
+     }
++    if (ksu_selinux_hide_private_context(buf, size))
++        return -EINVAL;
+     char *canon = NULL;
+     u32 sid, len;
+     ssize_t length;
+@@ -185,2 +203,7 @@
++    if (ksu_selinux_hide_private_context(scon, strlen(scon)) || ksu_selinux_hide_private_context(tcon, strlen(tcon))) {
++        length = -EINVAL;
++        goto out;
++    }
++    ksu_selinux_hide_filter_av(scon, tcon, tclass, &avd);
+     length = scnprintf(buf, SIMPLE_TRANSACTION_LIMIT, "%x %x %x %x %u %x", avd.allowed, 0xffffffff, avd.auditallow,
+                        avd.auditdeny, avd.seqno, avd.flags);
 @@ -190,53 +190,8 @@
      return length;
  }
@@ -93,7 +129,7 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
  }
  
  static void ksu_selinux_hide_disable()
-@@ -397,6 +347,144 @@
+@@ -397,6 +347,146 @@
      mutex_unlock(&selinux_hide_mutex);
  }
  
@@ -142,6 +178,8 @@ diff --git a/kernel/feature/selinux_hide.c b/kernel/feature/selinux_hide.c
 +        len--;
 +    if (!len)
 +        return 0;
++    if (ksu_selinux_hide_private_context(str, len))
++        return -EINVAL;
 +#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0)
 +    rc = security_context_to_sid_with_policy(backup_sepolicy, str, len, &sid, SECSID_NULL, GFP_KERNEL);
 +#else
