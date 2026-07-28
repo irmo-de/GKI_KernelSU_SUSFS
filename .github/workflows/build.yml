@@ -421,6 +421,109 @@ jobs:
         compression_level: 9
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Collect Research Artifacts
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        RESEARCH_DIR="${{ github.workspace }}/research-artifacts"
+        mkdir -p "$RESEARCH_DIR"
+
+        copy_if_present() {
+          local src="$1"
+          local name="${2:-}"
+          if [ -e "$src" ]; then
+            if [ -n "$name" ]; then
+              cp -a "$src" "$RESEARCH_DIR/$name"
+            else
+              cp -a "$src" "$RESEARCH_DIR/"
+            fi
+          fi
+        }
+
+        DIST_DIR="${{ github.workspace }}/kernel/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}/dist"
+        BAZEL_DIR="${{ github.workspace }}/kernel/bazel-bin/common/kernel_aarch64"
+        OUT_DIR="${{ github.workspace }}/kernel/out/${{ inputs.android_version }}-${{ inputs.kernel_version }}"
+
+        copy_if_present "$DIST_DIR/Image"
+        copy_if_present "$DIST_DIR/Image.lz4"
+        copy_if_present "$DIST_DIR/vmlinux"
+        copy_if_present "$DIST_DIR/System.map"
+        copy_if_present "$DIST_DIR/Module.symvers"
+        copy_if_present "$DIST_DIR/.config" "dist.config"
+
+        copy_if_present "$BAZEL_DIR/Image" "bazel-Image"
+        copy_if_present "$BAZEL_DIR/Image.lz4" "bazel-Image.lz4"
+        copy_if_present "$BAZEL_DIR/vmlinux" "bazel-vmlinux"
+        copy_if_present "$BAZEL_DIR/System.map" "bazel-System.map"
+        copy_if_present "$BAZEL_DIR/Module.symvers" "bazel-Module.symvers"
+
+        copy_if_present "$OUT_DIR/.config" "out.config"
+        if [ -d "$OUT_DIR" ]; then
+          find "$OUT_DIR" -maxdepth 4 -type f \
+            \( -name ".config" -o -name "System.map" -o -name "Module.symvers" -o -name "vmlinux" \) \
+            -print > "$RESEARCH_DIR/build-output-candidates.txt"
+        fi
+
+        {
+          echo "version=${{ inputs.version }}"
+          echo "android_version=${{ inputs.android_version }}"
+          echo "kernel_version=${{ inputs.kernel_version }}"
+          echo "sublevel=${{ steps.extract.outputs.sublevel }}"
+          echo "os_patch_level=${{ inputs.os_patch_level }}"
+          echo "variant=${{ inputs.variant }}"
+          echo "feature_set=${{ inputs.feature_set }}"
+          echo "workflow_sha=${{ github.sha }}"
+          echo "workflow_ref=${{ github.ref }}"
+          git -C "${{ github.workspace }}/kernel" rev-parse HEAD 2>/dev/null | sed 's/^/kernel_tree_commit=/'
+        } > "$RESEARCH_DIR/build-metadata.txt"
+
+        IMAGE_FOR_CONFIG=""
+        for candidate in "$RESEARCH_DIR/Image" "$RESEARCH_DIR/bazel-Image"; do
+          if [ -f "$candidate" ]; then
+            IMAGE_FOR_CONFIG="$candidate"
+            break
+          fi
+        done
+
+        if [ -n "$IMAGE_FOR_CONFIG" ]; then
+          python3 - "$IMAGE_FOR_CONFIG" "$RESEARCH_DIR/ikconfig.config" <<'PY'
+        import gzip
+        import sys
+        from pathlib import Path
+
+        image = Path(sys.argv[1]).read_bytes()
+        output = Path(sys.argv[2])
+        start = image.find(b"IKCFG_ST")
+        end = image.find(b"IKCFG_ED", start + 8)
+        if start < 0 or end < 0:
+            raise SystemExit(0)
+        blob = image[start + 8:end]
+        gzip_start = blob.find(b"\x1f\x8b\x08")
+        if gzip_start < 0:
+            raise SystemExit(0)
+        output.write_bytes(gzip.decompress(blob[gzip_start:]))
+        PY
+        fi
+
+        if command -v sha256sum >/dev/null 2>&1; then
+          find "$RESEARCH_DIR" -maxdepth 1 -type f -print0 |
+            sort -z |
+            xargs -0r sha256sum > "$RESEARCH_DIR/SHA256SUMS"
+        fi
+
+        find "$RESEARCH_DIR" -maxdepth 1 -type f -printf '%f %s bytes\n' |
+          sort > "$RESEARCH_DIR/manifest.txt"
+        cat "$RESEARCH_DIR/manifest.txt"
+
+    - name: Upload Research Artifacts
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ steps.extract.outputs.file_name }}-${{ inputs.variant }}-Research
+        path: ${{ github.workspace }}/research-artifacts/**
+        if-no-files-found: warn
+        compression-level: 9
+
     - name: Create Bootimgs Folder and Build Boot Images
       uses: ./.github/actions/build-boot-images
       with:
